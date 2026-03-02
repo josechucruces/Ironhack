@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Dashboard de Comentarios</title>
+<style>
+    body { font-family: Arial, sans-serif; margin: 20px; background: #f4f4f4; }
+    h1, h2 { color: #333; }
+    section { background: #fff; padding: 15px; margin-bottom: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);}
+    table { border-collapse: collapse; width: 100%; margin-top: 10px; }
+    th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+    th { background-color: #f2f2f2; }
+    input, select { padding: 5px; margin-right: 10px; }
+    .bar { display: inline-block; height: 20px; background-color: #4CAF50; margin-right: 2px; }
+    .chart-bar { background-color: #2196F3; height: 20px; margin-bottom: 2px; display: inline-block; }
+</style>
+</head>
+<body>
+
+<h1>Dashboard de Comentarios de Redes Sociales</h1>
+
+<section>
+    <h2>Cargar CSV</h2>
+    <input type="file" id="csvFile" accept=".csv">
+</section>
+
+<section id="resumen">
+    <h2>Resumen General</h2>
+    <p>Total de comentarios: <span id="totalComentarios">0</span></p>
+    <p>Usuarios únicos: <span id="usuariosUnicos">0</span></p>
+    <p>Rango de fechas: <span id="rangoFechas">-</span></p>
+</section>
+
+<section id="sentimiento">
+    <h2>Sentimiento Global</h2>
+    <div id="sentimientoGrafico"></div>
+</section>
+
+<section id="palabrasFrecuentes">
+    <h2>Palabras Más Frecuentes</h2>
+    <table id="tablaPalabras">
+        <thead><tr><th>Palabra</th><th>Cantidad</th></tr></thead>
+        <tbody></tbody>
+    </table>
+</section>
+
+<section id="distribucionTemporal">
+    <h2>Distribución Temporal</h2>
+    <div id="graficoTemporal"></div>
+</section>
+
+<section id="topUsuarios">
+    <h2>Top 10 Usuarios</h2>
+    <table id="tablaUsuarios">
+        <thead><tr><th>Usuario</th><th>Cantidad</th><th>% del total</th></tr></thead>
+        <tbody></tbody>
+    </table>
+</section>
+
+<section id="explorador">
+    <h2>Explorador de Comentarios</h2>
+    <input type="text" id="filtroPalabra" placeholder="Buscar palabra clave">
+    <select id="filtroSentimiento">
+        <option value="todos">Todos</option>
+        <option value="positivo">Positivo</option>
+        <option value="negativo">Negativo</option>
+        <option value="neutro">Neutro</option>
+    </select>
+    <table id="tablaComentarios">
+        <thead><tr>
+            <th>Comentario</th><th>Usuario</th><th>Fecha</th><th>Likes</th><th>Publicación</th>
+        </tr></thead>
+        <tbody></tbody>
+    </table>
+</section>
+
+<script>
+// Stopwords básicas en español
+const stopwords = ["de","la","que","el","en","y","a","los","del","se","las","por","un","para","con","no","una","su","al","lo","como","más","pero","sus","le","ya","o","este","sí","porque","esta","entre","cuando","muy","sin","sobre","también","me","hasta","hay","donde","quien","desde","todo","nos","durante","todos","uno","les","ni","contra","otros","ese","eso","ante","ellos","e","esto","mí","antes","algunos","qué","unos","yo","otro","otras","otra","él","tanto","esa","estos","mucho","quienes","nada","muchos","cual","poco","ella","estar","estas","algunas","algo","nosotros","mi","mis","tú","te","ti","tu","tus","ellas","nosotras","vosotros","vosotras","os","mío","mía","míos","mías","tuyo","tuya","tuyos","tuyas","suyo","suya","suyos","suyas","nuestro","nuestra","nuestros","nuestras","vuestro","vuestra","vuestros","vuestras","esos","esas","estoy","estás","está","estamos","estáis","están","esté","estés","estemos","estéis","estén","estaré","estarás","estará","estaremos","estaréis","estarán","estaría","estarías","estaríamos","estaríais","estarían","estaba","estabas","estábamos","estabais","estaban","estuve","estuviste","estuvo","estuvimos","estuvisteis","estuvieron","estuviera","estuvieras","estuviéramos","estuvierais","estuvieran","estuviese","estuvieses","estuviésemos","estuvieseis","estuviesen","estando","estado","estada","estados","estadas","estad"];
+
+// Función simple de análisis de sentimiento
+function clasificarSentimiento(texto) {
+    texto = texto.toLowerCase();
+    const positivas = ["bien","bueno","excelente","me gusta","fantástico","feliz","amor"];
+    const negativas = ["malo","terrible","horrible","odio","triste","peor","problemático"];
+    let score = 0;
+    positivas.forEach(p => { if(texto.includes(p)) score++; });
+    negativas.forEach(n => { if(texto.includes(n)) score--; });
+    if(score > 0) return "positivo";
+    if(score < 0) return "negativo";
+    return "neutro";
+}
+
+// Leer y parsear CSV
+function parseCSV(texto) {
+    const lines = texto.trim().split("\n");
+    const headers = lines[0].split(",").map(h => h.trim());
+    return lines.slice(1).map(line => {
+        const values = line.split(",").map(v => v.trim());
+        let obj = {};
+        headers.forEach((h,i) => obj[h] = values[i]);
+        obj.likes = parseInt(obj.likes) || 0;
+        obj.fecha = new Date(obj.fecha);
+        obj.sentimiento = clasificarSentimiento(obj.comentario || "");
+        return obj;
+    });
+}
+
+// Función principal de renderizado
+function renderDashboard(data) {
+    // Resumen general
+    document.getElementById("totalComentarios").textContent = data.length;
+    const usuarios = [...new Set(data.map(d=>d.usuario))];
+    document.getElementById("usuariosUnicos").textContent = usuarios.length;
+    const fechas = data.map(d=>d.fecha).sort((a,b)=>a-b);
+    if(fechas.length>0) {
+        document.getElementById("rangoFechas").textContent = fechas[0].toISOString().split("T")[0] + " → " + fechas[fechas.length-1].toISOString().split("T")[0];
+    }
+
+    // Sentimiento global
+    const conteoSent = {positivo:0,negativo:0,neutro:0};
+    data.forEach(d => conteoSent[d.sentimiento]++);
+    const total = data.length;
+    const grafico = document.getElementById("sentimientoGrafico");
+    grafico.innerHTML = `
+        Positivo: ${((conteoSent.positivo/total)*100).toFixed(1)}% |
+        Negativo: ${((conteoSent.negativo/total)*100).toFixed(1)}% |
+        Neutro: ${((conteoSent.neutro/total)*100).toFixed(1)}%
+    `;
+
+    // Palabras frecuentes
+    const palabras = {};
+    data.forEach(d => {
+        d.comentario.toLowerCase().split(/\W+/).forEach(p => {
+            if(p && !stopwords.includes(p)) {
+                palabras[p] = (palabras[p]||0)+1;
+            }
+        });
+    });
+    const topPalabras = Object.entries(palabras).sort((a,b)=>b[1]-a[1]).slice(0,20);
+    const tbodyPalabras = document.querySelector("#tablaPalabras tbody");
+    tbodyPalabras.innerHTML = "";
+    topPalabras.forEach(([p,c])=>{
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td>${p}</td><td>${c}</td>`;
+        tbodyPalabras.appendChild(tr);
+    });
+
+    // Distribución temporal
+    const temp = {};
+    data.forEach(d=>{
+        const dia = d.fecha.toISOString().split("T")[0];
+        temp[dia] = (temp[dia]||0)+1;
+    });
+    const graficoTemp = document.getElementById("graficoTemporal");
+    graficoTemp.innerHTML = "";
+    Object.keys(temp).sort().forEach(dia=>{
+        const div = document.createElement("div");
+        div.textContent = dia + " ";
+        const barra = document.createElement("span");
+        barra.className = "chart-bar";
+        barra.style.width = (temp[dia]*10) + "px";
+        barra.textContent = temp[dia];
+        div.appendChild(barra);
+        graficoTemp.appendChild(div);
+    });
+
+    // Top usuarios
+    const usuariosCount = {};
+    data.forEach(d=>usuariosCount[d.usuario]=(usuariosCount[d.usuario]||0)+1);
+    const topUsuarios = Object.entries(usuariosCount).sort((a,b)=>b[1]-a[1]).slice(0,10);
+    const tbodyUsuarios = document.querySelector("#tablaUsuarios tbody");
+    tbodyUsuarios.innerHTML = "";
+    topUsuarios.forEach(([u,c])=>{
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td>${u}</td><td>${c}</td><td>${((c/total)*100).toFixed(1)}%</td>`;
+        tbodyUsuarios.appendChild(tr);
+    });
+
+    // Explorador de comentarios
+    const inputPalabra = document.getElementById("filtroPalabra");
+    const selectSent = document.getElementById("filtroSentimiento");
+    const tablaComentarios = document.querySelector("#tablaComentarios tbody");
+
+    function filtrar() {
+        const palabra = inputPalabra.value.toLowerCase();
+        const sent = selectSent.value;
+        tablaComentarios.innerHTML = "";
+        data.filter(d=>{
+            const matchPalabra = palabra === "" || d.comentario.toLowerCase().includes(palabra);
+            const matchSent = sent === "todos" || d.sentimiento === sent;
+            return matchPalabra && matchSent;
+        }).forEach(d=>{
+            const tr = document.createElement("tr");
+            tr.innerHTML = `<td>${d.comentario}</td><td>${d.usuario}</td><td>${d.fecha.toISOString().split("T")[0]}</td><td>${d.likes}</td><td>${d.publicacion}</td>`;
+            tablaComentarios.appendChild(tr);
+        });
+    }
+
+    inputPalabra.addEventListener("input", filtrar);
+    selectSent.addEventListener("change", filtrar);
+    filtrar(); // Render inicial
+}
+
+// Evento de carga del CSV
+document.getElementById("csvFile").addEventListener("change", function(e){
+    const file = e.target.files[0];
+    if(file) {
+        const reader = new FileReader();
+        reader.onload = function(evt) {
+            const data = parseCSV(evt.target.result);
+            renderDashboard(data);
+        };
+        reader.readAsText(file);
+    }
+});
+</script>
+
+</body>
+</html>
